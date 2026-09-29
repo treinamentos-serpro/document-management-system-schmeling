@@ -14,6 +14,15 @@ const ALLOWED_TYPES = new Map([
   ['image/jpeg', ['.jpg', '.jpeg']],
 ]);
 
+const UPLOAD_LIMITS = {
+  fileSize: MAX_FILE_SIZE,
+  files: 1,
+  fields: 0,
+  parts: 2,
+  fieldNameSize: 100,
+  headerPairs: 200,
+};
+
 function createDocumentRouter({ storageDirectory, service }) {
   const router = express.Router();
   const controller = createDocumentController(service);
@@ -29,7 +38,7 @@ function createDocumentRouter({ storageDirectory, service }) {
   });
   const upload = multer({
     storage,
-    limits: { fileSize: MAX_FILE_SIZE, files: 1 },
+    limits: UPLOAD_LIMITS,
     fileFilter(req, file, callback) {
       const extension = path.extname(file.originalname).toLowerCase();
       const allowedExtensions = ALLOWED_TYPES.get(file.mimetype);
