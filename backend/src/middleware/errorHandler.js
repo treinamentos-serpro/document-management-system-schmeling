@@ -20,8 +20,16 @@ function errorHandler(error, req, res, next) {
   }
 
   const statusCode = error.statusCode || 500;
-  const code = statusCode >= 500 ? 'INTERNAL_ERROR' : (error.code || 'BAD_REQUEST');
-  const message = statusCode >= 500 ? 'Erro interno do servidor.' : error.message;
+  const publicErrors = new Map([
+    ['FILE_REQUIRED', [400, 'Arquivos vazios ou ausentes não são permitidos.']],
+    ['FILE_TYPE_NOT_ALLOWED', [415, 'O formato do arquivo não é permitido.']],
+    ['FILE_CONTENT_NOT_ALLOWED', [415, 'O conteúdo do arquivo não corresponde ao formato informado.']],
+    ['DOCUMENT_NOT_FOUND', [404, 'Documento não encontrado.']],
+    ['STORAGE_PATH_INVALID', [500, 'Erro interno do servidor.']],
+  ]);
+  const publicError = publicErrors.get(error.code);
+  const code = statusCode >= 500 || !publicError ? 'INTERNAL_ERROR' : error.code;
+  const message = statusCode >= 500 || !publicError ? 'Erro interno do servidor.' : publicError[1];
   return sendError(res, statusCode, code, message);
 }
 

@@ -4,12 +4,25 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const app = require('../src/app');
+const { createDocumentRepository } = require('../src/repositories/documentRepository');
 
 // Teste de fumaça do seed: garante que o app Express foi exportado.
 // Novos testes serão adicionados durante os Steps 2, 6 e 7 com auxílio do Copilot.
 test('o app backend é exportado', () => {
   assert.ok(app, 'o app deve estar definido');
   assert.strictEqual(typeof app, 'function', 'o app Express deve ser uma função');
+});
+
+test('não permite caminhos de arquivo fora do storage', async (t) => {
+  const storageDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'dms-path-test-'));
+  const repository = createDocumentRepository(storageDirectory);
+
+  t.after(() => fs.rm(storageDirectory, { recursive: true, force: true }));
+
+  assert.throws(
+    () => repository.getFilePath({ storageFilename: '../outside.txt' }),
+    /Caminho de armazenamento inválido/,
+  );
 });
 
 test('faz upload, lista, baixa e valida documentos', async (t) => {
@@ -32,7 +45,7 @@ test('faz upload, lista, baixa e valida documentos', async (t) => {
   const emptyList = await fetch(`${baseUrl}/documents`);
   assert.deepStrictEqual(await emptyList.json(), []);
 
-  const content = Buffer.from('conteudo de teste');
+  const content = Buffer.from('%PDF-1.4\nconteudo de teste');
   const form = new FormData();
   form.append('file', new Blob([content], { type: 'application/pdf' }), 'relatorio.pdf');
   const uploadResponse = await fetch(`${baseUrl}/upload`, { method: 'POST', body: form });
@@ -76,6 +89,15 @@ test('faz upload, lista, baixa e valida documentos', async (t) => {
   });
   assert.strictEqual(unsupportedResponse.status, 415);
   assert.strictEqual((await unsupportedResponse.json()).error.code, 'FILE_TYPE_NOT_ALLOWED');
+
+  const spoofedForm = new FormData();
+  spoofedForm.append('file', new Blob(['texto'], { type: 'application/pdf' }), 'fraude.pdf');
+  const spoofedResponse = await fetch(`${baseUrl}/upload`, {
+    method: 'POST',
+    body: spoofedForm,
+  });
+  assert.strictEqual(spoofedResponse.status, 415);
+  assert.strictEqual((await spoofedResponse.json()).error.code, 'FILE_CONTENT_NOT_ALLOWED');
 
   const emptyForm = new FormData();
   emptyForm.append('file', new Blob([], { type: 'application/pdf' }), 'vazio.pdf');

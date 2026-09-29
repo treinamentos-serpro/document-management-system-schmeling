@@ -1,40 +1,22 @@
 const { randomUUID } = require('node:crypto');
+const { validateDocumentFile } = require('./documentFileValidator');
 
 function createDocumentService({ repository, owner, clock = () => new Date() }) {
   return {
     async createDocument(file) {
       if (!file) {
-        const error = new Error('Envie um arquivo no campo "file".');
-        error.statusCode = 400;
-        error.code = 'FILE_REQUIRED';
-        throw error;
+        throw createServiceError('Envie um arquivo no campo "file".', 400, 'FILE_REQUIRED');
       }
-
-      if (file.size === 0) {
-        await repository.removeStoredFile(file.filename);
-        const error = new Error('Arquivos vazios não são permitidos.');
-        error.statusCode = 400;
-        error.code = 'FILE_REQUIRED';
-        throw error;
-      }
-
-      const document = {
-        id: randomUUID(),
-        originalName: file.originalname,
-        size: file.size,
-        uploadedAt: clock().toISOString(),
-        owner,
-        storageFilename: file.filename,
-      };
 
       try {
+        await validateDocumentFile(file);
+        const document = createDocumentMetadata(file, owner, clock);
         repository.save(document);
+        return toPublicMetadata(document);
       } catch (error) {
-        await repository.removeStoredFile(file.filename);
+        await removeUploadedFile(repository, file.filename);
         throw error;
       }
-
-      return toPublicMetadata(document);
     },
 
     listDocuments() {
@@ -44,10 +26,7 @@ function createDocumentService({ repository, owner, clock = () => new Date() }) 
     getDocumentForDownload(id) {
       const document = repository.findByIdAndOwner(id, owner);
       if (!document) {
-        const error = new Error('Documento não encontrado.');
-        error.statusCode = 404;
-        error.code = 'DOCUMENT_NOT_FOUND';
-        throw error;
+        throw createServiceError('Documento não encontrado.', 404, 'DOCUMENT_NOT_FOUND');
       }
 
       return {
@@ -56,6 +35,32 @@ function createDocumentService({ repository, owner, clock = () => new Date() }) 
       };
     },
   };
+}
+
+function createDocumentMetadata(file, owner, clock) {
+  return {
+    id: randomUUID(),
+    originalName: file.originalname,
+    size: file.size,
+    uploadedAt: clock().toISOString(),
+    owner,
+    storageFilename: file.filename,
+  };
+}
+
+async function removeUploadedFile(repository, filename) {
+  try {
+    await repository.removeStoredFile(filename);
+  } catch {
+    // A falha de limpeza não deve mascarar o erro que interrompeu o upload.
+  }
+}
+
+function createServiceError(message, statusCode, code) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  error.code = code;
+  return error;
 }
 
 function toPublicMetadata({ id, originalName, size, uploadedAt, owner }) {
