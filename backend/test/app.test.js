@@ -25,7 +25,7 @@ test('não permite caminhos de arquivo fora do storage', async (t) => {
   );
 });
 
-test('faz upload, lista, baixa e valida documentos', async (t) => {
+async function createTestServer(t) {
   const storageDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'dms-test-'));
   const testApp = app.createApp({ storageDirectory, owner: 'test-user' });
   const server = testApp.listen(0, '127.0.0.1');
@@ -42,13 +42,21 @@ test('faz upload, lista, baixa e valida documentos', async (t) => {
     await fs.rm(storageDirectory, { recursive: true, force: true });
   });
 
-  const emptyList = await fetch(`${baseUrl}/documents`);
-  assert.deepStrictEqual(await emptyList.json(), []);
+  return { baseUrl, storageDirectory };
+}
 
-  const content = Buffer.from('%PDF-1.4\nconteudo de teste');
+async function uploadPdf(baseUrl, content = Buffer.from('%PDF-1.4\nconteudo de teste')) {
   const form = new FormData();
   form.append('file', new Blob([content], { type: 'application/pdf' }), 'relatorio.pdf');
-  const uploadResponse = await fetch(`${baseUrl}/upload`, { method: 'POST', body: form });
+  const response = await fetch(`${baseUrl}/upload`, { method: 'POST', body: form });
+
+  return { response, content };
+}
+
+test('POST /upload envia e valida documentos', async (t) => {
+  const { baseUrl, storageDirectory } = await createTestServer(t);
+  const { response: uploadResponse, content } = await uploadPdf(baseUrl);
+
   assert.strictEqual(uploadResponse.status, 201);
   const document = await uploadResponse.json();
   assert.deepStrictEqual(Object.keys(document), ['id', 'originalName', 'size', 'uploadedAt', 'owner']);
@@ -56,18 +64,6 @@ test('faz upload, lista, baixa e valida documentos', async (t) => {
   assert.strictEqual(document.size, content.length);
   assert.strictEqual(document.owner, 'test-user');
   assert.ok(Number.isFinite(Date.parse(document.uploadedAt)));
-
-  const listResponse = await fetch(`${baseUrl}/documents`);
-  assert.deepStrictEqual(await listResponse.json(), [document]);
-
-  const downloadResponse = await fetch(`${baseUrl}/documents/${document.id}/download`);
-  assert.strictEqual(downloadResponse.status, 200);
-  assert.match(downloadResponse.headers.get('content-disposition'), /relatorio\.pdf/);
-  assert.deepStrictEqual(Buffer.from(await downloadResponse.arrayBuffer()), content);
-
-  const missingResponse = await fetch(`${baseUrl}/documents/missing/download`);
-  assert.strictEqual(missingResponse.status, 404);
-  assert.strictEqual((await missingResponse.json()).error.code, 'DOCUMENT_NOT_FOUND');
 
   const noFileResponse = await fetch(`${baseUrl}/upload`, { method: 'POST' });
   assert.strictEqual(noFileResponse.status, 400);
@@ -119,4 +115,32 @@ test('faz upload, lista, baixa e valida documentos', async (t) => {
   assert.strictEqual((await oversizedResponse.json()).error.code, 'FILE_TOO_LARGE');
 
   assert.strictEqual((await fs.readdir(storageDirectory)).length, 1);
+});
+
+test('GET /documents lista os documentos enviados', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const emptyList = await fetch(`${baseUrl}/documents`);
+  assert.deepStrictEqual(await emptyList.json(), []);
+
+  const { response: uploadResponse } = await uploadPdf(baseUrl);
+  const document = await uploadResponse.json();
+
+  const listResponse = await fetch(`${baseUrl}/documents`);
+  assert.strictEqual(listResponse.status, 200);
+  assert.deepStrictEqual(await listResponse.json(), [document]);
+});
+
+test('GET /documents/:id/download baixa o documento solicitado', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const { response: uploadResponse, content } = await uploadPdf(baseUrl);
+  const document = await uploadResponse.json();
+
+  const downloadResponse = await fetch(`${baseUrl}/documents/${document.id}/download`);
+  assert.strictEqual(downloadResponse.status, 200);
+  assert.match(downloadResponse.headers.get('content-disposition'), /relatorio\.pdf/);
+  assert.deepStrictEqual(Buffer.from(await downloadResponse.arrayBuffer()), content);
+
+  const missingResponse = await fetch(`${baseUrl}/documents/missing/download`);
+  assert.strictEqual(missingResponse.status, 404);
+  assert.strictEqual((await missingResponse.json()).error.code, 'DOCUMENT_NOT_FOUND');
 });

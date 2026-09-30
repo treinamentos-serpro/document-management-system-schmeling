@@ -47,9 +47,16 @@ export default function UploadComponent({ onUploaded }) {
       setSuccess(`${file.name} enviado com sucesso.`);
       setFile(null);
       if (inputRef.current) inputRef.current.value = '';
-      await onUploaded();
     } catch (uploadError) {
       setError(uploadError.message);
+      setIsUploading(false);
+      return;
+    }
+
+    try {
+      await onUploaded();
+    } catch {
+      setError('Documento enviado, mas não foi possível atualizar a lista.');
     } finally {
       setIsUploading(false);
     }

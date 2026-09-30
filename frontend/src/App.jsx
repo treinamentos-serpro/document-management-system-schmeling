@@ -9,35 +9,24 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  async function refreshDocuments() {
+  async function refreshDocuments({ signal } = {}) {
     setIsLoading(true);
     setLoadError('');
     try {
-      setDocuments(await listDocuments());
+      setDocuments(await listDocuments({ signal }));
     } catch (error) {
+      if (signal?.aborted) return;
       setLoadError(error.message);
     } finally {
-      setIsLoading(false);
+      if (!signal?.aborted) setIsLoading(false);
     }
   }
 
   useEffect(() => {
-    let isActive = true;
+    const controller = new AbortController();
+    refreshDocuments({ signal: controller.signal });
 
-    listDocuments()
-      .then((items) => {
-        if (isActive) setDocuments(items);
-      })
-      .catch((error) => {
-        if (isActive) setLoadError(error.message);
-      })
-      .finally(() => {
-        if (isActive) setIsLoading(false);
-      });
-
-    return () => {
-      isActive = false;
-    };
+    return () => controller.abort();
   }, []);
 
   return (

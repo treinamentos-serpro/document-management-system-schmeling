@@ -1,6 +1,6 @@
 const API_PREFIX = '/api';
 
-async function request(path, options) {
+async function request(path, options = {}) {
   const response = await fetch(`${API_PREFIX}${path}`, options);
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
@@ -9,8 +9,8 @@ async function request(path, options) {
   return response;
 }
 
-export async function listDocuments() {
-  const response = await request('/documents');
+export async function listDocuments(options) {
+  const response = await request('/documents', options);
   return response.json();
 }
 
